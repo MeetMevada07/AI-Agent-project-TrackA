@@ -196,8 +196,8 @@ LT.NS          Larsen & Toubro (Infrastructure)
 3. Connect your GitHub repo
 4. Add secrets in Streamlit Cloud dashboard:
    ```
-   GOOGLE_API_KEY = "your_key"
-   LLM_PROVIDER = "gemini"
+   GROQ_API_KEY = "your_key"
+   LLM_PROVIDER = "groq"
    NEWS_API_KEY = "your_key"
    ```
 5. Deploy! ✅
