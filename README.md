@@ -64,7 +64,7 @@ indian_finance_agent/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/indian-finance-agent.git
+git clone url
 cd indian-finance-agent
 
 # Create virtual environment
