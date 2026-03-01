@@ -100,11 +100,13 @@ Fill in your `.env` file:x
 
 ```env
 # Choose your LLM provider
-LLM_PROVIDER=gemini          # 'gemini' or 'openai'
+LLM_PROVIDER=gemini          # 'gemini' or 'openai' or 'groq'
 
 # For Gemini (FREE tier — recommended):
 # Get key at: https://aistudio.google.com/app/apikey
 GOOGLE_API_KEY=your_gemini_key_here
+or 
+GEOQ_API_KEY=your_groq_key_here
 
 # For OpenAI (paid):
 # Get key at: https://platform.openai.com/api-keys
