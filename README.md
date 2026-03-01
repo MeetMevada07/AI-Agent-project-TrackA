@@ -65,7 +65,7 @@ indian_finance_agent/
 ```bash
 # Clone the repository
 git clone url
-cd indian-finance-agent
+cd AI-Agent-project-TrackA
 
 # Create virtual environment
 python -m venv venv
