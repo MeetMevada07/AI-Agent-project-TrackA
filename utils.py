@@ -55,33 +55,58 @@ def is_market_open() -> dict:
 def validate_symbol(symbol: str) -> tuple[bool, str]:
     """
     Validate and normalize an Indian stock symbol.
-    
+
+    Rules:
+    * Accept only NSE (.NS) or BSE (.BO) suffixes when provided.
+    * If no suffix is given, default to NSE and verify the ticker exists.
+    * Popular stocks configured in settings are always allowed.
+    * Any other suffix or format is rejected.
+
     Args:
         symbol: Raw user input e.g. 'reliance', 'TCS', 'RELIANCE.NS'
-    
+
     Returns:
         (is_valid: bool, normalized_symbol: str)
     """
     if not symbol or not isinstance(symbol, str):
         return False, "Empty symbol"
 
-    symbol = symbol.strip().upper()
+    symbol = symbol.strip().upper().replace(" ", "")
 
-    # Remove spaces
-    symbol = symbol.replace(" ", "")
+    # if user explicitly specified a suffix
+    if "." in symbol:
+        parts = symbol.split(".")
+        if len(parts) != 2:
+            return False, f"Invalid symbol format: {symbol}"
+        base, suffix = parts
+        suffix = suffix.upper()
+        if suffix not in ("NS", "BO"):
+            return False, "Only NSE (.NS) or BSE (.BO) symbols are supported."
+        # basic pattern check on base
+        if not re.match(r"^[A-Z0-9\-&]+$", base):
+            return False, f"Invalid symbol format: {symbol}"
+        normalized = f"{base}.{suffix}"
+        return True, normalized
 
-    # Already has exchange suffix
-    if symbol.endswith(".NS") or symbol.endswith(".BO"):
-        return True, symbol
-
-    # Check if it's in our popular stocks dict
+    # without suffix: look in popular stocks first
     for key in settings.POPULAR_STOCKS:
-        if key.replace(".NS", "") == symbol:
+        base = key.split(".")[0]
+        if base == symbol:
             return True, key
 
-    # Validate format: alphanumeric + hyphens only
+    # allow generic alphanumeric names but verify they exist on NSE
     if re.match(r"^[A-Z0-9\-&]+$", symbol):
-        return True, f"{symbol}.NS"  # Default to NSE
+        candidate = f"{symbol}.NS"
+        # perform a quick existence check using yfinance via get_stock_price
+        try:
+            from tools.stock_tools import get_stock_price
+            info = get_stock_price(candidate)
+            if info.get("error"):
+                return False, f"Symbol '{symbol}' not found on NSE."
+        except Exception:
+            # if price check fails for some reason, assume invalid
+            return False, f"Symbol '{symbol}' not found"
+        return True, candidate
 
     return False, f"Invalid symbol format: {symbol}"
 
