@@ -1,215 +1,263 @@
-# 📈 FinSaarthi — Indian Stock Market AI Financial Agent
+# 📈 FinSaarthi v2.0 — AI Indian Stock Intelligence Dashboard
 
-> **Track A — Production-Ready Financial Analysis Application**  
-> Built with LangChain + Streamlit + yfinance | Supports NSE/BSE Indian Stocks
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.35.0-red.svg)](https://streamlit.io/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue)
-![LangChain](https://img.shields.io/badge/LangChain-0.2.11-green)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.35-red)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+> **AI-Powered Financial Intelligence for Indian Markets** — Professional-grade stock analysis dashboard with AI signals, market mood analysis, portfolio risk assessment, and automated market briefs.
 
----
+![FinSaarthi Dashboard](https://via.placeholder.com/800x400/2563EB/FFFFFF?text=FinSaarthi+Dashboard+Screenshot)
 
-## 🌟 Features
+## ✨ Features
 
-| Feature | Description |
-|---------|-------------|
-| 🤖 **AI Chat** | Conversational AI with memory — ask anything about Indian markets |
-| 📊 **Stock Analysis** | Full technical + fundamental analysis with interactive charts |
-| 🔄 **Stock Comparison** | Side-by-side comparison of up to 5 Indian stocks |
-| 📰 **News Sentiment** | VADER-powered sentiment analysis on latest stock news |
-| 💼 **Portfolio Tracker** | Track holdings with live P&L, stored in SQLite |
-| ⭐ **Watchlist** | Save and monitor stocks with live price updates |
-| 🧮 **Calculators** | SIP calculator + LTCG/STCG tax calculator |
-| 📥 **PDF Export** | Download analysis reports as PDF |
+### 🤖 AI Trading Signals
+- **Buy/Hold/Sell Recommendations** with confidence percentages
+- **Technical Analysis**: MA Crossover, RSI, MACD signals
+- **Sentiment Analysis**: News-based market sentiment scoring
+- **52-Week Position Analysis** with visual indicators
 
----
+### 🌡️ Market Mood Indicator
+- **Nifty + Sensex Movement Analysis**
+- **Advance/Decline Ratio** tracking
+- **News Sentiment Aggregation**
+- **Bullish/Neutral/Bearish** percentage breakdown
 
-## 🏗️ Architecture
+### 📋 AI Daily Market Brief
+- **One-click AI-generated summaries**
+- **Top gainers/losers analysis**
+- **Sector performance insights**
+- **Key news highlights**
 
-```
-indian_finance_agent/
-├── app.py                    # Streamlit entry point (main UI)
-├── llm.py                    # LLM setup (Gemini / OpenAI)
-├── prompts.py                # All LangChain prompt templates
-├── utils.py                  # Utilities (PDF export, INR format, market status)
-├── requirements.txt          # Pinned dependencies
-├── .env.example              # Environment variable template
-│
-├── config/
-│   └── settings.py           # Centralized configuration
-│
-├── tools/
-│   ├── stock_tools.py        # yfinance: prices, technicals, fundamentals
-│   └── news_tools.py         # NewsAPI + VADER sentiment analysis
-│
-├── agents/
-│   └── financial_agent.py    # LangChain agent with memory
-│
-├── database/
-│   └── db_manager.py         # SQLite: watchlist + portfolio
-│
-├── ui/
-│   └── charts.py             # Plotly chart builders
-│
-└── data/
-    └── finance_agent.db      # SQLite database (auto-created)
-```
+### 🛡️ Portfolio Risk Assessment
+- **Risk Score (1-10)** with visual gauge
+- **Volatility Analysis** and concentration metrics
+- **Sector Diversification** scoring
+- **Herfindahl Index** calculations
 
----
+### 🔄 AI Stock Comparison
+- **Multi-stock signal comparison**
+- **AI narrative analysis** (strengths, weaknesses, outlook)
+- **6-month normalized performance charts**
+
+### ⭐ Smart Watchlist
+- **AI signal indicators** per stock
+- **Trend analysis** (Bullish/Bearish)
+- **Confidence scoring** and alerts
 
 ## 🚀 Quick Start
 
-### Step 1 — Clone & Setup Environment
+### Prerequisites
+- Python 3.11+
+- Git
+- API Keys (NewsAPI, LLM provider)
 
-```bash
-# Clone the repository
-git clone url
-cd AI-Agent-project-TrackA
+### Installation
 
-# Create virtual environment
-python -m venv venv
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/finsaarthi.git
+   cd finsaarthi
+   ```
 
-# Activate (Linux/Mac)
-source venv/bin/activate
+2. **Create virtual environment**
+   ```bash
+   python -m venv venv
+   # On Windows:
+   venv\Scripts\activate
+   # On macOS/Linux:
+   source venv/bin/activate
+   ```
 
-# Activate (Windows)
-venv\Scripts\activate
-```
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### Step 2 — Install Dependencies
+4. **Configure environment**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your API keys
+   ```
 
-```bash
-pip install -r requirements.txt
+5. **Run the application**
+   ```bash
+   streamlit run app.py
+   ```
 
-# Download TextBlob corpora
-python -m textblob.download_corpora
-```
+## 🔧 Configuration
 
-### Step 3 — Configure API Keys
-
-```bash
-# Copy the example env file
-cp .env.example .env
-
-# Edit .env with your keys:
-nano .env   # or use any text editor
-```
-
-Fill in your `.env` file:x
-
+### Environment Variables (.env)
 ```env
-# Choose your LLM provider
-LLM_PROVIDER=gemini          # 'gemini' or 'openai' or 'groq'
-
-# For Gemini (FREE tier — recommended):
-# Get key at: https://aistudio.google.com/app/apikey
-GOOGLE_API_KEY=your_gemini_key_here
-or 
-GEOQ_API_KEY=your_groq_key_here
-
-# For OpenAI (paid):
-# Get key at: https://platform.openai.com/api-keys
+# LLM Provider Configuration
+LLM_PROVIDER=groq          # Options: groq, openai, gemini
+GROQ_API_KEY=your_groq_key_here
 OPENAI_API_KEY=your_openai_key_here
+GEMINI_API_KEY=your_gemini_key_here
 
-# For news (FREE tier — 100 req/day):
-# Get key at: https://newsapi.org/register
+# News API
 NEWS_API_KEY=your_newsapi_key_here
+
+# Database
+DATABASE_PATH=data/finance_agent.db
 ```
 
-### Step 4 — Run the App
+### Supported LLM Providers
+- **Groq** (Recommended) - Fast inference with Llama models
+- **OpenAI** - GPT-4/3.5-turbo
+- **Google Gemini** - Latest Gemini models
+
+## 🏗️ Project Structure
+
+```
+finsaarthi/
+├── 📁 app.py                 # Main Streamlit application
+├── 📁 config/
+│   └── settings.py           # Configuration & API management
+├── 📁 agents/
+│   ├── financial_agent.py    # LangChain AI agent logic
+│   └── market_brief.py       # Market brief & comparison AI
+├── 📁 tools/
+│   ├── stock_tools.py        # yfinance data fetching & analysis
+│   ├── news_tools.py         # NewsAPI integration & sentiment
+│   └── ai_signals.py         # AI trading signals & indicators
+├── 📁 ui/
+│   └── charts.py             # Plotly chart components
+├── 📁 database/
+│   └── db_manager.py         # SQLite database operations
+├── 📁 data/                  # Local data storage
+├── 📁 llm.py                 # LLM provider setup
+├── 📁 prompts.py             # LangChain prompt templates
+├── 📁 utils.py               # Utility functions & helpers
+├── 📁 requirements.txt       # Python dependencies
+├── 📁 .env.example          # Environment template
+└── 📁 README.md             # Project documentation
+```
+
+## 🎨 UI/UX Design
+
+- **🎨 Design System**: Bloomberg/Zerodha-inspired dark fintech theme
+- **🎯 Color Palette**: Primary `#2563EB` · Success `#22C55E` · Warning `#F59E0B` · Danger `#EF4444`
+- **📊 Charts**: Interactive Plotly visualizations
+- **📱 Responsive**: Optimized for desktop and tablet
+- **✨ Animations**: Smooth transitions and hover effects
+
+## 📦 Deployment
+
+### Streamlit Cloud (Recommended)
+1. Push to GitHub repository
+2. Visit [share.streamlit.io](https://share.streamlit.io)
+3. Connect your GitHub repository
+4. Add environment secrets in Streamlit Cloud settings
+5. Deploy!
+
+### Docker Deployment
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+EXPOSE 8501
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+```
 
 ```bash
-streamlit run app.py
+# Build and run
+docker build -t finsaarthi .
+docker run -p 8501:8501 finsaarthi
 ```
 
-Open your browser at: **http://localhost:8501**
+### Local Development
+```bash
+# Run with custom port
+streamlit run app.py --server.port=8501
 
----
-
-## 🇮🇳 Indian Stock Symbols Guide
-
-| Exchange | Suffix | Example |
-|----------|--------|---------|
-| NSE (National Stock Exchange) | `.NS` | `RELIANCE.NS` |
-| BSE (Bombay Stock Exchange) | `.BO` | `RELIANCE.BO` |
-
-### Popular NSE Stocks to Try:
-```
-RELIANCE.NS    Reliance Industries (Energy/Retail/Telecom)
-TCS.NS         Tata Consultancy Services (IT)
-INFY.NS        Infosys (IT)
-HDFCBANK.NS    HDFC Bank (Banking)
-ICICIBANK.NS   ICICI Bank (Banking)
-SBIN.NS        State Bank of India (PSU Banking)
-WIPRO.NS       Wipro (IT)
-BAJFINANCE.NS  Bajaj Finance (NBFC)
-BHARTIARTL.NS  Bharti Airtel (Telecom)
-LT.NS          Larsen & Toubro (Infrastructure)
+# Run in headless mode
+streamlit run app.py --server.headless=true
 ```
 
----
+## 🔍 Usage Examples
 
-## 💡 Usage Examples
+### Basic Stock Analysis
+```python
+from tools.stock_tools import get_stock_price, get_fundamental_analysis
 
-### AI Chat Queries:
-- *"Analyze TCS stock for long-term investment"*
-- *"Compare Reliance vs HDFC Bank fundamentals"*
-- *"Explain what RSI of 75 means for Infosys"*
-- *"What is the LTCG tax on ₹2 lakh profit from Wipro shares?"*
-- *"Should I start a SIP in Nifty 50 index fund?"*
+# Get current price
+price = get_stock_price("RELIANCE.NS")
 
-### Stock Analysis:
-1. Enter symbol: `TCS.NS`
-2. Select period: `1y`
-3. Enable SMA 20/50 overlays
-4. Click **Analyze**
-5. View price, technicals, fundamentals, and AI report
+# Get fundamental analysis
+fundamentals = get_fundamental_analysis("RELIANCE.NS")
+```
 
----
+### AI Trading Signals
+```python
+from tools.ai_signals import get_trading_signal
 
-## 📊 Technical Indicators Explained
+# Get AI signal for a stock
+signal = get_trading_signal("TCS.NS")
+print(f"Signal: {signal['signal']} (Confidence: {signal['confidence']}%)")
+```
 
-| Indicator | What it tells you |
-|-----------|-------------------|
-| **SMA 20/50** | Short and medium-term trend direction |
-| **EMA 20** | Momentum-weighted moving average |
-| **RSI (14)** | Overbought (>70) or Oversold (<30) |
-| **MACD** | Trend direction and momentum changes |
-| **Bollinger Bands** | Volatility and price breakout zones |
+### Market Mood Analysis
+```python
+from tools.ai_signals import get_market_mood
 
----
+# Get current market sentiment
+mood = get_market_mood()
+print(f"Market Mood: {mood['mood']} ({mood['bullish_pct']}%)")
+```
 
-## 🏛️ Indian Tax Rules Implemented
+## 🤝 Contributing
 
-| Tax | Holding Period | Rate | Exemption |
-|-----|----------------|------|-----------|
-| STCG | < 12 months | 20% | None |
-| LTCG | ≥ 12 months | 12.5% | ₹1,25,000/year |
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
----
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## ☁️ Deployment on Streamlit Cloud
+### Development Setup
+```bash
+# Install development dependencies
+pip install -r requirements-dev.txt
 
-1. Push code to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Connect your GitHub repo
-4. Add secrets in Streamlit Cloud dashboard:
-   ```
-   GROQ_API_KEY = "your_key"
-   LLM_PROVIDER = "groq"
-   NEWS_API_KEY = "your_key"
-   ```
-5. Deploy! ✅
+# Run tests
+pytest
 
----
-
-## ⚠️ Disclaimer
-
-This application is for **educational and informational purposes only**. It does not constitute financial advice. Past performance of stocks does not guarantee future returns. Please consult a SEBI-registered investment advisor before making investment decisions.
-
----
+# Run linting
+flake8 .
+black .
+```
 
 ## 📄 License
 
-MIT License — Free to use, modify, and distribute.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## ⚠️ Disclaimer
+
+**Educational Purpose Only**
+
+This application is for educational and informational purposes only. It is not intended to provide financial advice, recommendations, or endorsements. All investment decisions should be made after consulting with qualified financial advisors. The developers and contributors are not responsible for any financial losses incurred through the use of this application.
+
+**Not SEBI Registered**: This is not a SEBI-registered investment advisor or financial planning service.
+
+## 🙏 Acknowledgments
+
+- **Streamlit** - For the amazing web app framework
+- **LangChain** - For LLM orchestration
+- **yfinance** - For stock data
+- **Plotly** - For interactive charts
+- **VADER** - For sentiment analysis
+- **NewsAPI** - For financial news
+
+## 📞 Support
+
+- 📧 **Email**: support@finsaarthi.com
+- 🐛 **Issues**: [GitHub Issues](https://github.com/yourusername/finsaarthi/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/yourusername/finsaarthi/discussions)
+
+---
+
+**Made with ❤️ for Indian investors**
