@@ -6,10 +6,11 @@
 import logging
 import numpy as np
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from cachetools import TTLCache
 from tools.stock_tools import (
     get_historical_data, calculate_technical_indicators,
-    get_stock_price, get_fundamental_analysis,
+    get_stock_price, get_fundamental_analysis, batch_fetch_prices,
 )
 from tools.news_tools import get_news_with_sentiment
 
@@ -22,9 +23,12 @@ def _get_st_cache_data():
     """Lazy import so this module works outside Streamlit too."""
     try:
         import streamlit as st
-        return st.cache_data
+        def st_cache_wrapper(**kwargs):
+            kwargs["show_spinner"] = False
+            return st.cache_data(**kwargs)
+        return st_cache_wrapper
     except ImportError:
-        def _noop(ttl=None):
+        def _noop(**kwargs):
             def decorator(fn):
                 return fn
             return decorator
@@ -222,15 +226,8 @@ def get_trading_signal(symbol: str) -> dict:
 @_get_st_cache_data()(ttl=300)
 def get_market_mood() -> dict:
     """
-    Calculate overall Indian market mood from:
-    - Nifty 50 movement
-    - Sector index movement
-    - News sentiment on top stocks
-    - Advance-decline ratio (proxy via top stocks)
-
-    Returns:
-        dict with mood label, scores, and percentages.
-        Returns a safe neutral fallback dict on any failure.
+    Calculate overall Indian market mood from Nifty, Sensex, sector stocks, and news.
+    Uses parallel batch fetch for speed.
     """
     cache_key = "market_mood"
     if cache_key in _signal_cache:
@@ -240,8 +237,13 @@ def get_market_mood() -> dict:
         mood_scores = []
         details = []
 
-        # ── Nifty 50 movement ────────────────────────────────
-        nifty_data = get_stock_price("^NSEI")
+        sample_stocks = ["^NSEI", "^BSESN", "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS"]
+        # Fetch all in parallel
+        all_prices = batch_fetch_prices(sample_stocks)
+
+        nifty_data = all_prices.get("^NSEI", {"error": "N/A"})
+        sensex_data = all_prices.get("^BSESN", {"error": "N/A"})
+
         if "error" not in nifty_data:
             nifty_chg = nifty_data.get("change_pct", 0)
             if nifty_chg > 1.0:
@@ -256,22 +258,14 @@ def get_market_mood() -> dict:
                 mood_scores.append(15)
             details.append({"label": "Nifty 50", "change": nifty_chg, "price": nifty_data.get("current_price")})
 
-        # ── Sensex movement ──────────────────────────────────
-        sensex_data = get_stock_price("^BSESN")
         if "error" not in sensex_data:
             sensex_chg = sensex_data.get("change_pct", 0)
-            if sensex_chg > 0:
-                mood_scores.append(60)
-            else:
-                mood_scores.append(40)
+            mood_scores.append(60 if sensex_chg > 0 else 40)
             details.append({"label": "Sensex", "change": sensex_chg, "price": sensex_data.get("current_price")})
 
-        # ── Sample top stocks ────────────────────────────────
-        sample_stocks = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS"]
-        gainers = 0
-        losers = 0
-        for sym in sample_stocks:
-            p = get_stock_price(sym)
+        gainers = losers = 0
+        for sym in ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS"]:
+            p = all_prices.get(sym, {})
             if "error" not in p:
                 if p.get("change_pct", 0) > 0:
                     gainers += 1
@@ -280,29 +274,23 @@ def get_market_mood() -> dict:
 
         total_stocks = gainers + losers
         if total_stocks > 0:
-            advance_ratio = gainers / total_stocks
-            mood_scores.append(advance_ratio * 100)
+            mood_scores.append(gainers / total_stocks * 100)
 
-        # ── News sentiment on market ─────────────────────────
         try:
             market_news = get_news_with_sentiment("NIFTY", "Indian stock market Nifty")
             sentiment = market_news.get("avg_score", 0)
-            sentiment_mood = (sentiment + 1) / 2 * 100  # normalize -1..1 → 0..100
-            mood_scores.append(sentiment_mood)
+            mood_scores.append((sentiment + 1) / 2 * 100)
         except Exception:
             pass
 
-        # ── Aggregate mood ───────────────────────────────────
-        if mood_scores:
-            avg_mood = sum(mood_scores) / len(mood_scores)
-        else:
-            avg_mood = 50  # Default neutral
+        # Prevent a skewed score if market data failed but news succeeded
+        if "error" in nifty_data and "error" in sensex_data and total_stocks == 0:
+            raise Exception("Market data unavailable; cannot accurately compute mood from news alone.")
 
+        avg_mood = sum(mood_scores) / len(mood_scores) if mood_scores else 50
         bullish_pct = min(100, max(0, avg_mood))
         bearish_pct = min(100, max(0, (100 - avg_mood) * 0.6))
         neutral_pct = max(0, 100 - bullish_pct - bearish_pct)
-
-        # Normalize to 100%
         total = bullish_pct + bearish_pct + neutral_pct
         if total > 0:
             bullish_pct = round(bullish_pct / total * 100)
@@ -310,14 +298,11 @@ def get_market_mood() -> dict:
             neutral_pct = 100 - bullish_pct - bearish_pct
 
         if avg_mood >= 65:
-            mood_label = "Bullish 🐂"
-            mood_color = "#22C55E"
+            mood_label, mood_color = "Bullish 🐂", "#22C55E"
         elif avg_mood >= 45:
-            mood_label = "Neutral ➡️"
-            mood_color = "#F59E0B"
+            mood_label, mood_color = "Neutral ➡️", "#F59E0B"
         else:
-            mood_label = "Bearish 🐻"
-            mood_color = "#EF4444"
+            mood_label, mood_color = "Bearish 🐻", "#EF4444"
 
         result = {
             "mood_label": mood_label,
@@ -332,7 +317,6 @@ def get_market_mood() -> dict:
             "losers": losers,
             "details": details,
         }
-
         _signal_cache[cache_key] = result
         return result
 
@@ -507,13 +491,7 @@ def calculate_portfolio_risk(holdings: list, current_prices: dict) -> dict:
 
 @_get_st_cache_data()(ttl=300)
 def get_top_movers() -> dict:
-    """
-    Get top gainers and losers from popular Indian stocks.
-
-    Returns:
-        dict with gainers and losers lists.
-        Returns empty lists on failure — never raises.
-    """
+    """Get top gainers and losers from popular Indian stocks — parallel fetch."""
     cache_key = "top_movers"
     if cache_key in _signal_cache:
         return _signal_cache[cache_key]
@@ -521,27 +499,179 @@ def get_top_movers() -> dict:
     from config.settings import settings
     stocks_to_check = list(settings.POPULAR_STOCKS.keys())
 
+    # Batch fetch all at once
+    all_prices = batch_fetch_prices(stocks_to_check)
+
     movers = []
-    for symbol in stocks_to_check:
-        try:
-            data = get_stock_price(symbol)
-            if "error" not in data:
-                movers.append({
-                    "symbol": symbol.replace(".NS", ""),
-                    "full_symbol": symbol,
-                    "company": data.get("company_name", symbol)[:22],
-                    "price": data.get("current_price", 0),
-                    "change_pct": data.get("change_pct", 0),
-                    "change": data.get("change", 0),
-                })
-        except Exception as e:
-            logger.warning("get_top_movers: skipping %s — %s", symbol, e)
+    for symbol, data in all_prices.items():
+        if "error" not in data:
+            movers.append({
+                "symbol": symbol.replace(".NS", ""),
+                "full_symbol": symbol,
+                "company": data.get("company_name", symbol)[:22],
+                "price": data.get("current_price", 0),
+                "change_pct": data.get("change_pct", 0),
+                "change": data.get("change", 0),
+            })
 
     movers.sort(key=lambda x: x["change_pct"], reverse=True)
     gainers = [m for m in movers if m["change_pct"] > 0][:5]
-    losers = [m for m in movers if m["change_pct"] < 0][-5:]
+    losers  = [m for m in movers if m["change_pct"] < 0][-5:]
     losers.reverse()
 
     result = {"gainers": gainers, "losers": losers, "all": movers}
+    _signal_cache[cache_key] = result
+    return result
+
+
+# ─────────────────────────────────────────────────────────────
+# SECTOR HEATMAP
+# ─────────────────────────────────────────────────────────────
+
+@_get_st_cache_data()(ttl=300)
+def get_sector_heatmap() -> list:
+    """Sector-wise avg % change — parallel batch fetch."""
+    cache_key = "sector_heatmap"
+    if cache_key in _signal_cache:
+        return _signal_cache[cache_key]
+
+    from config.settings import settings
+
+    # Collect all sector symbols and batch fetch once
+    all_symbols = []
+    for symbols in settings.SECTORS.values():
+        all_symbols.extend(symbols)
+    all_prices = batch_fetch_prices(list(set(all_symbols)))
+
+    result = []
+    for sector, symbols in settings.SECTORS.items():
+        sector_stocks = []
+        changes = []
+        for sym in symbols:
+            d = all_prices.get(sym, {})
+            if "error" not in d:
+                chg = d.get("change_pct", 0)
+                changes.append(chg)
+                sector_stocks.append({
+                    "symbol": sym.replace(".NS", ""),
+                    "change_pct": chg,
+                    "price": d.get("current_price", 0),
+                })
+        avg_chg = round(sum(changes) / len(changes), 2) if changes else 0.0
+        result.append({"sector": sector, "avg_change": avg_chg, "stocks": sector_stocks})
+
+    result.sort(key=lambda x: x["avg_change"], reverse=True)
+    _signal_cache[cache_key] = result
+    return result
+
+
+# ─────────────────────────────────────────────────────────────
+# MARKET BREADTH
+# ─────────────────────────────────────────────────────────────
+
+@_get_st_cache_data()(ttl=300)
+def get_market_breadth() -> dict:
+    """Advance/Decline ratio + volume strength — parallel batch fetch."""
+    cache_key = "market_breadth"
+    if cache_key in _signal_cache:
+        return _signal_cache[cache_key]
+
+    from config.settings import settings
+    symbols = list(settings.POPULAR_STOCKS.keys())
+    all_prices = batch_fetch_prices(symbols)
+
+    advance = decline = unchanged = 0
+    total_change = 0.0
+    all_stocks = []
+
+    for sym, d in all_prices.items():
+        if "error" not in d:
+            chg = d.get("change_pct", 0)
+            vol = d.get("volume", 0)
+            avg_vol = d.get("avg_volume", vol) or vol
+            vol_ratio = round(vol / avg_vol, 2) if avg_vol else 1.0
+            if chg > 0.1:
+                advance += 1
+            elif chg < -0.1:
+                decline += 1
+            else:
+                unchanged += 1
+            total_change += chg
+            all_stocks.append({
+                "symbol": sym.replace(".NS", ""),
+                "change_pct": chg,
+                "volume_ratio": vol_ratio,
+            })
+
+    total = advance + decline + unchanged or 1
+    ad_ratio = round(advance / max(decline, 1), 2)
+    avg_change = round(total_change / total, 2)
+
+    if ad_ratio >= 2.0:
+        breadth_label, breadth_color = "Strong Advance", "#10B981"
+    elif ad_ratio >= 1.2:
+        breadth_label, breadth_color = "Moderate Advance", "#22C55E"
+    elif ad_ratio >= 0.8:
+        breadth_label, breadth_color = "Mixed", "#F59E0B"
+    elif ad_ratio >= 0.4:
+        breadth_label, breadth_color = "Moderate Decline", "#F97316"
+    else:
+        breadth_label, breadth_color = "Heavy Decline", "#EF4444"
+
+    result = {
+        "advance": advance, "decline": decline, "unchanged": unchanged,
+        "total": total, "ad_ratio": ad_ratio, "avg_change": avg_change,
+        "breadth_label": breadth_label, "breadth_color": breadth_color,
+        "stocks": all_stocks,
+    }
+    _signal_cache[cache_key] = result
+    return result
+
+
+# ─────────────────────────────────────────────────────────────
+# 52-WEEK PULSE
+# ─────────────────────────────────────────────────────────────
+
+@_get_st_cache_data()(ttl=600)
+def get_52week_pulse() -> dict:
+    """52-week high/low classification — parallel batch fetch."""
+    cache_key = "52week_pulse"
+    if cache_key in _signal_cache:
+        return _signal_cache[cache_key]
+
+    from config.settings import settings
+    symbols = list(settings.POPULAR_STOCKS.keys())
+    all_prices = batch_fetch_prices(symbols)
+
+    near_high = []
+    near_low = []
+
+    for sym, d in all_prices.items():
+        if "error" in d:
+            continue
+        price  = d.get("current_price", 0)
+        high52 = d.get("year_high", 0) or d.get("52_week_high", 0)
+        low52  = d.get("year_low", 0)  or d.get("52_week_low", 0)
+        if not price or not high52 or not low52:
+            continue
+        pct_from_high = (price - high52) / high52 * 100
+        pct_from_low  = (price - low52)  / low52  * 100
+        entry = {
+            "symbol": sym.replace(".NS", ""),
+            "company": d.get("company_name", sym)[:18],
+            "price": price,
+            "change_pct": d.get("change_pct", 0),
+            "pct_from_high": round(pct_from_high, 1),
+            "pct_from_low": round(pct_from_low, 1),
+        }
+        if pct_from_high >= -5:
+            near_high.append(entry)
+        elif pct_from_low <= 15:
+            near_low.append(entry)
+
+    near_high.sort(key=lambda x: x["pct_from_high"], reverse=True)
+    near_low.sort(key=lambda x: x["pct_from_low"])
+
+    result = {"near_high": near_high, "near_low": near_low}
     _signal_cache[cache_key] = result
     return result
