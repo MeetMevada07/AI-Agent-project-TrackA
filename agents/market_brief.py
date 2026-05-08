@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 MARKET_BRIEF_PROMPT = PromptTemplate(
-    input_variables=["nifty_data", "sensex_data", "top_gainers", "top_losers", "news_headlines", "market_mood"],
+    input_variables=["nifty_data", "sensex_data", "sector_performance", "market_breadth", "news_headlines", "market_mood"],
     template="""You are FinSaarthi, an expert Indian financial market analyst.
 
 Generate a concise, insightful Daily Market Brief for Indian investors based on this data:
@@ -21,11 +21,11 @@ Generate a concise, insightful Daily Market Brief for Indian investors based on 
 {nifty_data}
 {sensex_data}
 
-📈 TOP GAINERS TODAY:
-{top_gainers}
+🏭 SECTOR PERFORMANCE TODAY:
+{sector_performance}
 
-📉 TOP LOSERS TODAY:
-{top_losers}
+📊 MARKET BREADTH:
+{market_breadth}
 
 🌡️ MARKET MOOD: {market_mood}
 
@@ -34,10 +34,10 @@ Generate a concise, insightful Daily Market Brief for Indian investors based on 
 
 Write a professional market brief that covers:
 1. **Market Overview** — How did the indices perform and why?
-2. **Key Movers** — Notable gainers and losers with brief reasons
-3. **Sentiment Analysis** — What is driving investor sentiment today?
-4. **Key Takeaways** — 2-3 actionable insights for investors
-5. **Watch List for Tomorrow** — What should investors monitor?
+2. **Sector Spotlight** — Which sectors led or lagged and why?
+3. **Market Breadth Analysis** — How broad was today's move?
+4. **Sentiment Analysis** — What is driving investor sentiment today?
+5. **Key Takeaways** — 2-3 actionable insights for investors
 
 Keep it concise (under 400 words), use simple language suitable for retail investors.
 Use ₹ symbol for prices. Be specific with numbers.
@@ -84,7 +84,7 @@ Keep it concise and data-driven. Avoid generic advice.
 
 
 def generate_market_brief(llm, nifty_data: dict, sensex_data: dict,
-                           gainers: list, losers: list,
+                           sector_data: list, breadth_data: dict,
                            news_headlines: str, mood: str) -> str:
     """Generate AI market brief using LLM."""
     try:
@@ -101,21 +101,26 @@ def generate_market_brief(llm, nifty_data: dict, sensex_data: dict,
             if sensex_data else "Sensex: Data unavailable"
         )
 
-        gainers_str = "\n".join([
-            f"• {g['company']} ({g['symbol']}): +{g['change_pct']:.2f}%"
-            for g in gainers[:5]
-        ]) or "No significant gainers today"
+        sector_str = "\n".join([
+            f"• {s['sector']}: {s['avg_change']:+.2f}% (avg of {len(s['stocks'])} stocks)"
+            for s in sector_data
+        ]) if sector_data else "Sector data unavailable"
 
-        losers_str = "\n".join([
-            f"• {l['company']} ({l['symbol']}): {l['change_pct']:.2f}%"
-            for l in losers[:5]
-        ]) or "No significant losers today"
+        adv  = breadth_data.get("advance", 0)
+        dec  = breadth_data.get("decline", 0)
+        adr  = breadth_data.get("ad_ratio", 1.0)
+        blbl = breadth_data.get("breadth_label", "Mixed")
+        avch = breadth_data.get("avg_change", 0)
+        breadth_str = (
+            f"{blbl} | Advancing: {adv}, Declining: {dec}, "
+            f"A/D Ratio: {adr:.2f}, Avg Change: {avch:+.2f}%"
+        )
 
         response = chain.invoke({
             "nifty_data": nifty_str,
             "sensex_data": sensex_str,
-            "top_gainers": gainers_str,
-            "top_losers": losers_str,
+            "sector_performance": sector_str,
+            "market_breadth": breadth_str,
             "news_headlines": news_headlines or "No news data available",
             "market_mood": mood,
         })
@@ -153,4 +158,3 @@ def generate_comparison_summary(llm, symbols: list, comparison_data: str, signal
             "⚠️ AI comparison summary is temporarily unavailable. "
             "Please check your LLM API key and try again."
         )
-
