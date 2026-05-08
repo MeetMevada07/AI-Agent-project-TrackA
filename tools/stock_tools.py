@@ -8,22 +8,26 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from cachetools import TTLCache
-from typing import Optional
+from typing import Optional, List
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-_cache = TTLCache(maxsize=100, ttl=settings.CACHE_TTL_SECONDS)
+_cache = TTLCache(maxsize=200, ttl=settings.CACHE_TTL_SECONDS)
 
 
 def _get_st_cache_data():
     try:
         import streamlit as st
-        return st.cache_data
+        def st_cache_wrapper(**kwargs):
+            kwargs["show_spinner"] = False
+            return st.cache_data(**kwargs)
+        return st_cache_wrapper
     except ImportError:
-        def _noop(ttl=None):
+        def _noop(**kwargs):
             def decorator(fn):
                 return fn
             return decorator
@@ -33,8 +37,9 @@ def _get_st_cache_data():
 # -------------------------------------------------------------
 # Helper: Retry wrapper for yfinance
 # -------------------------------------------------------------
-def fetch_with_retry(symbol, retries=3):
-    periods = ["5d", "1mo", "2d"]  # Try multiple periods in case one fails
+def fetch_with_retry(symbol, retries=2):
+    """Fast retry — no sleep, yfinance batch where possible."""
+    periods = ["5d", "1mo"]
     for i in range(retries):
         for period in periods:
             try:
@@ -42,11 +47,120 @@ def fetch_with_retry(symbol, retries=3):
                 hist = ticker.history(period=period)
                 if not hist.empty:
                     return ticker, hist
-            except Exception as e:
-                logger.warning("Retry %s for %s (period=%s) due to %s", i + 1, symbol, period, e)
-        time.sleep(1.5)
-
+            except Exception:
+                pass
     return None, pd.DataFrame()
+
+
+def batch_fetch_prices(symbols: List[str]) -> dict:
+    """
+    Fetch prices for multiple symbols in parallel using ThreadPoolExecutor.
+    Returns dict: {symbol -> price_dict_or_error_dict}
+    """
+    results = {}
+    # Check cache first
+    to_fetch = []
+    for sym in symbols:
+        key = f"price_{sym}"
+        if key in _cache:
+            results[sym] = _cache[key]
+        else:
+            to_fetch.append(sym)
+
+    if not to_fetch:
+        return results
+
+    # Try yfinance bulk download first (much faster for multiple symbols)
+    try:
+        bulk = yf.download(
+            to_fetch,
+            period="5d",
+            group_by="ticker",
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+        )
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
+
+        for sym in to_fetch:
+            try:
+                if len(to_fetch) == 1:
+                    hist = bulk
+                else:
+                    hist = bulk[sym] if sym in bulk.columns.get_level_values(0) else pd.DataFrame()
+
+                if hist is None or hist.empty:
+                    results[sym] = {"error": f"No data for {sym}"}
+                    continue
+
+                hist = hist.dropna(how="all")
+                if hist.empty:
+                    results[sym] = {"error": f"No data for {sym}"}
+                    continue
+
+                close_col = "Close" if "Close" in hist.columns else hist.columns[-1]
+                current_price = float(hist[close_col].iloc[-1])
+                prev_price = float(hist[close_col].iloc[-2]) if len(hist) > 1 else current_price
+                change = current_price - prev_price
+                change_pct = (change / prev_price) * 100 if prev_price else 0
+
+                # fast_info for 52w data
+                try:
+                    ticker = yf.Ticker(sym)
+                    fast = ticker.fast_info
+                    week_high = getattr(fast, "year_high", "N/A")
+                    week_low  = getattr(fast, "year_low", "N/A")
+                    market_cap = getattr(fast, "market_cap", "N/A")
+                except Exception:
+                    week_high = week_low = market_cap = "N/A"
+
+                try:
+                    info = yf.Ticker(sym).info
+                    company_name = info.get("longName") or info.get("shortName") or sym
+                    pe_ratio = info.get("trailingPE") or info.get("forwardPE") or "N/A"
+                    if isinstance(pe_ratio, float):
+                        pe_ratio = round(pe_ratio, 2)
+                except Exception:
+                    company_name = sym
+                    pe_ratio = "N/A"
+
+                vol_col = "Volume" if "Volume" in hist.columns else None
+                volume = int(hist[vol_col].iloc[-1]) if vol_col else 0
+
+                entry = {
+                    "symbol": sym,
+                    "company_name": company_name,
+                    "current_price": round(current_price, 2),
+                    "previous_close": round(prev_price, 2),
+                    "change": round(change, 2),
+                    "change_pct": round(change_pct, 2),
+                    "volume": volume,
+                    "market_cap": market_cap,
+                    "52_week_high": round(week_high, 2) if isinstance(week_high, float) else week_high,
+                    "52_week_low":  round(week_low, 2)  if isinstance(week_low, float) else week_low,
+                    "year_high": week_high,
+                    "year_low": week_low,
+                    "pe_ratio": pe_ratio,
+                    "currency": "INR",
+                    "timestamp": now_str,
+                }
+                _cache[f"price_{sym}"] = entry
+                results[sym] = entry
+            except Exception as e:
+                results[sym] = {"error": str(e)}
+
+    except Exception:
+        # Fallback: parallel individual fetches
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            future_map = {ex.submit(get_stock_price, sym): sym for sym in to_fetch}
+            for future in as_completed(future_map):
+                sym = future_map[future]
+                try:
+                    results[sym] = future.result()
+                except Exception as e:
+                    results[sym] = {"error": str(e)}
+
+    return results
 
 
 # -------------------------------------------------------------
@@ -105,6 +219,8 @@ def get_stock_price(symbol: str) -> dict:
             "market_cap": market_cap,
             "52_week_high": round(week_high, 2) if isinstance(week_high, float) else week_high,
             "52_week_low":  round(week_low, 2)  if isinstance(week_low, float)  else week_low,
+            "year_high": week_high,
+            "year_low": week_low,
             "pe_ratio": pe_ratio,
             "currency": "INR",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
@@ -122,13 +238,15 @@ def get_stock_price(symbol: str) -> dict:
         }
 
 
+
+
 # -------------------------------------------------------------
 # HISTORICAL DATA
 # -------------------------------------------------------------
 @_get_st_cache_data()(ttl=300)
-def get_historical_data(symbol: str, period: str = "6mo") -> pd.DataFrame:
+def get_historical_data(symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
 
-    key = f"hist_{symbol}_{period}"
+    key = f"hist_{symbol}_{period}_{interval}"
     if key in _cache:
         return _cache[key]
 
@@ -136,9 +254,7 @@ def get_historical_data(symbol: str, period: str = "6mo") -> pd.DataFrame:
 
         ticker = yf.Ticker(symbol)
 
-        time.sleep(1)
-
-        df = ticker.history(period=period)
+        df = ticker.history(period=period, interval=interval)
 
         if df.empty:
             return pd.DataFrame()
@@ -216,8 +332,6 @@ def get_fundamental_analysis(symbol: str) -> dict:
     try:
 
         ticker = yf.Ticker(symbol)
-
-        time.sleep(1)
 
         # ticker.info has full fundamental data (fast_info is too limited)
         try:
