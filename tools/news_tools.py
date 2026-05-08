@@ -7,13 +7,15 @@
 #   3. Mixed-sentiment mock  (fallback when both above fail)
 # ============================================================
 
-import logging
+
 import requests
 from datetime import datetime, timedelta
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 from cachetools import TTLCache
 from config.settings import settings
 
+import logging
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
 
 _news_cache = TTLCache(maxsize=50, ttl=settings.CACHE_TTL_SECONDS)
@@ -23,9 +25,12 @@ _vader = SentimentIntensityAnalyzer()
 def _get_st_cache_data():
     try:
         import streamlit as st
-        return st.cache_data
+        def st_cache_wrapper(**kwargs):
+            kwargs["show_spinner"] = False
+            return st.cache_data(**kwargs)
+        return st_cache_wrapper
     except ImportError:
-        def _noop(ttl=None):
+        def _noop(**kwargs):
             def decorator(fn):
                 return fn
             return decorator
@@ -313,37 +318,70 @@ def analyze_sentiment(text: str) -> dict:
 # ─────────────────────────────────────────────
 @_get_st_cache_data()(ttl=300)
 def get_stock_news(query: str, days_back: int = 7, max_articles: int = 10) -> list:
-    """Thin wrapper kept for backward compatibility — delegates to NewsAPI."""
-    return _fetch_newsapi(query, days_back, max_articles)
+    """Fetch news ONLY for Indian listed stocks."""
 
+    import yfinance as yf
+
+    query = query.upper().strip()
+
+    # ✅ Step 1: Format validation
+    if not (query.endswith(".NS") or query.endswith(".BO")):
+        return [f"⚠️ '{query}' valid Indian stock nahi hai. Example: RELIANCE.NS"]
+
+    # ✅ Step 2: Check valid ticker using history (NO ERROR SPAM)
+    try:
+        ticker = yf.Ticker(query)
+        hist = ticker.history(period="1d")
+
+        if hist.empty:
+            return [f"⚠️ '{query}' Indian stock exchange par listed nahi hai ya invalid hai."]
+    except Exception:
+        return [f"⚠️ '{query}' verify nahi ho paya."]
+
+    # ✅ Step 3: Fetch news (FIXED POSITION)
+    return _fetch_newsapi(query, days_back, max_articles)
 
 @_get_st_cache_data()(ttl=300)
 def get_news_with_sentiment(symbol: str, company_name: str = "") -> dict:
     """
     Fetch genuine recent news + sentiment for a stock symbol.
-    Tries yfinance → NewsAPI → mixed mock, in that order.
-    Never returns empty articles — always shows something meaningful.
     """
+
+    import yfinance as yf
+
+    symbol = symbol.upper().strip()
+
+    # ✅ STEP 1: format check
+    if not (symbol.endswith(".NS") or symbol.endswith(".BO")):
+        raise ValueError(f"Symbol '{symbol}' not found on NSE.")
+
+    # ✅ STEP 2: listing check
+    try:
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="1d")
+
+        if hist.empty:
+            raise ValueError(f"Symbol '{symbol}' not found on NSE.")
+    except Exception:
+        raise ValueError(f"Symbol '{symbol}' not found on NSE.")
+
+    # ✅ ONLY VALID STOCKS COME BELOW THIS LINE
     resolved_name = _resolve_company_name(symbol, company_name)
 
-    # ── Try Source 1: yfinance (free, no key) ──
+    # ── Source 1: yfinance ──
     articles = _fetch_yfinance_news(symbol, max_articles=10)
 
-    # ── Try Source 2: NewsAPI ──
+    # ── Source 2: NewsAPI ──
     if not articles:
-        query = (
-            f'"{resolved_name}" stock'
-            if resolved_name and resolved_name != symbol.replace(".NS","").replace(".BO","")
-            else f"{symbol.replace('.NS','').replace('.BO','')} NSE stock India"
-        )
+        query = f'"{resolved_name}" stock India'
         articles = _fetch_newsapi(query, days_back=7, max_articles=10)
 
-    # ── Source 3: Mixed-sentiment mock ──
+    # ── Source 3: fallback ──
     if not articles:
-        logger.info("All live sources failed for %s — using mixed mock news", symbol)
+        logger.info("All live sources failed for %s — using mock news", symbol)
         articles = _get_mock_news(resolved_name)
 
-    # ── Run sentiment on all articles ──
+    # ── Sentiment ──
     enriched, scores = [], []
     for art in articles:
         try:
@@ -367,20 +405,21 @@ def get_news_with_sentiment(symbol: str, company_name: str = "") -> dict:
     else:
         overall = "Neutral ➡️"
 
-    pos_count = sum(1 for s in scores if s >= 0.05)
-    neg_count = sum(1 for s in scores if s <= -0.05)
-    neu_count = len(scores) - pos_count - neg_count
-
     return {
         "articles": enriched,
         "overall_sentiment": overall,
         "avg_score": avg_score,
-        "pos_count": pos_count,
-        "neg_count": neg_count,
-        "neu_count": neu_count,
-        "summary": (
-            f"Analyzed {len(articles)} articles. "
-            f"{pos_count} positive, {neg_count} negative, {neu_count} neutral. "
-            f"Overall: {overall} (avg score: {avg_score:.3f})"
-        ),
+        "pos_count": sum(1 for s in scores if s >= 0.05),
+        "neg_count": sum(1 for s in scores if s <= -0.05),
+        "neu_count": len(scores) - sum(1 for s in scores if abs(s) >= 0.05),
+        "summary": f"Analyzed {len(articles)} articles. Overall: {overall}"
     }
+
+def is_indian_stock(symbol: str) -> bool:
+    try:
+        import yfinance as yf
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(period="1d")
+        return not hist.empty
+    except Exception:
+        return False
